@@ -25,11 +25,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     print "Loading questions..."
-    #questions_train = json.load(open("../questions/CLEVR_train_questions.json", "r"))["questions"]
+    questions_train = json.load(open("../questions/CLEVR_train_questions.json", "r"))["questions"]
     print "Loading image features..."
-    #images_train = h5py.File("./features.h5")["train"][:]
+    images_train = h5py.File("./features.h5")["train"][:]
     print "Loading word vectors"
-    #nlp = spacy.load("en", add_vectors = lambda vocab : vocab.load_vectors(open("/save/lchen112/glove.42B.300d.txt","r")))
+    nlp = spacy.load("en", add_vectors = lambda vocab : vocab.load_vectors(open("/save/lchen112/glove.42B.300d.txt","r")))
     #encode labels
     labelencoder = preprocessing.LabelEncoder()
     labelencoder.fit(sorted([q["answer"] for q in questions_train]))
@@ -38,6 +38,7 @@ if __name__ == "__main__":
 	
     #model = BOW_QI()
     model = LSTM_QI()
+    #model = MCB()
     model.build(num_classes)
     print 'Training...'
     for epoch in xrange(args.num_epochs):

@@ -2,7 +2,8 @@ from keras.models import Sequential
 from keras.models import model_from_json
 from keras.layers.core import Dense, Activation,  Dropout, Reshape
 #from keras.layers.merge import concatenate
-from keras.layers import Merge
+from keras.layers import Merge, Lambda
+from keras.layers.merge import _Merge
 from keras.layers.normalization import BatchNormalization
 from keras.layers.recurrent import LSTM
 
@@ -21,12 +22,16 @@ img_dim = 2048
 word_vec_dim = 300
 max_len = 50
 
+import keras.backend as K
+from CBP import bilinear_pool
+
+
 class BOW_QI:
     def __init__(self):
         self.name = "../models/BOW_QI"	
     
     def build(self, num_classes, num_hiddens = 1024, num_layers = 3, dropout = 0.5, activation = "tanh"):
-        print "Building the MLP..."
+        print "Building the BOW_QI..."
         model = Sequential()
         model.add(Dense(num_hiddens, input_dim=img_dim+word_vec_dim, init='uniform'))
         model.add(BatchNormalization())
@@ -65,7 +70,7 @@ class LSTM_QI:
     
     def build(self, num_classes, num_layers_lstm = 1, num_hiddens_lstm = 512,
             num_hiddens = 1024, num_layers = 3, dropout = 0.5, activation = "tanh"):
-        print "Building the LSTM..."
+        print "Building the LSTM_QI..."
 	image_model = Sequential()
         image_model.add(Dense(num_hiddens, input_dim=img_dim, init='uniform'))
         image_model.add(BatchNormalization())
@@ -116,3 +121,49 @@ class LSTM_QI:
     
     def predict(self, V, Q):
 	return self.model.predict_classes([V, Q], verbose=0)
+
+class MCB:
+    #class CBP(_Merge):
+        #def _merge_function(self, inputs):
+            #return bilinear_pool(x[:, :img_dim], x[:, img_dim:], project_dim)
+            
+    def __init__(self):
+        self.name = "../models/MCB"	
+    
+    def build(self, num_classes, num_hiddens = 1024, num_layers = 3, dropout = 0.5, activation = "tanh"):
+        print "Building the MCB..."
+        def mcb(x, project_dim = 16000):
+            return bilinear_pool(x[:, :img_dim], x[:, img_dim:], project_dim)
+        model = Sequential()
+        model.add(Lambda(mcb, input_shape = (img_dim + word_vec_dim,)))
+        model.add(Dense(num_hiddens, init='uniform'))
+        model.add(BatchNormalization())
+	model.add(Dropout(dropout))
+        for i in range(num_layers-1):
+	    model.add(Dense(num_hiddens, init='uniform'))
+	    model.add(Activation(activation))
+	    model.add(Dropout(dropout))
+        model.add(Dense(num_classes, init='uniform'))
+        model.add(Activation('softmax'))
+        json_string = model.to_json()
+        open(self.name  + ".json", 'w').write(json_string)
+        model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics = ["accuracy"])
+        self.model = model
+
+    def extract_question_feature(self, nlp, q): 
+        return nlp(q).vector*len(nlp(q))
+
+    def train_on_batch(self, V, Q, A):
+        return self.model.train_on_batch(np.hstack((V, Q)), A)
+
+    def save_weights(self, suffix):
+        self.model.save_weights(self.name + suffix + ".hdf5" )
+    
+    def load(self, suffix = "0"):
+        self.model = model_from_json(open(self.name + ".json").read())
+        self.model.load_weights(self.name + suffix + ".hdf5" )
+        self.model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics = ["accuracy"])
+    
+    def predict(self, V, Q):
+	return self.model.predict_classes(np.hstack((V, Q)), verbose=0)
+
