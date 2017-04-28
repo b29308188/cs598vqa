@@ -7,6 +7,7 @@ from keras.layers.merge import _Merge
 from keras.layers.normalization import BatchNormalization
 from keras.layers.recurrent import LSTM
 from keras.optimizers import Adam 
+from keras.engine.topology import Layer
 from sklearn import preprocessing
 from sklearn.externals import joblib
 
@@ -25,6 +26,51 @@ max_len = 50
 import keras.backend as K
 
 
+
+_sketch_op = tf.load_op_library('/save/lchen112/CLEVR_v1.0/src/CBP/build/count_sketch.so')
+#@tf.RegisterGradient('CountSketch')
+#def _count_sketch_grad(op, grad):
+#    probs, h, s, _ = op.inputs
+#    input_size = int(probs.get_shape()[1])
+#    return [_sketch_op.count_sketch_grad(grad, h, s, input_size), None, None, None]
+
+class MCB(Layer):
+    def __init__(self, output_dim, **kwargs):
+        self.output_dim = output_dim
+        self.img_dim = 2048
+        self.word_vec_dim = 300
+        super(MCB, self).__init__(**kwargs)
+    def build(self, input_shape):
+        h = self.add_weight(shape = (self.img_dim, ), initializer = tf.random_uniform_initializer(0, self.output_dim), trainable = False)
+        self.h1 = tf.cast(h, 'int32')
+        h = self.add_weight(shape = (self.img_dim, ), initializer = tf.random_uniform_initializer(0, self.output_dim), trainable = False)
+        self.h2 = tf.cast(h, 'int32')
+        s = self.add_weight(shape = (self.word_vec_dim, ), initializer = tf.random_uniform_initializer(0, 2), trainable = False)
+        self.s1 = tf.cast(tf.floor(s) * 2 - 1, 'int32') # 1 or -1
+        s = self.add_weight(shape = (self.word_vec_dim, ), initializer = tf.random_uniform_initializer(0, 2), trainable = False)
+        self.s2 = tf.cast(tf.floor(s) * 2 - 1, 'int32') # 1 or -1
+        super(MCB, self).build(input_shape)
+    def count_sketch(self, probs, project_size, h, s):
+        with tf.variable_scope('CountSketch_'+probs.name.replace(':', '_')) as scope:
+            input_size = int(probs.get_shape()[1])
+            # h, s must be sampled once
+            history = tf.get_collection('__countsketch')
+            if scope.name in history:
+                scope.reuse_variables()
+            tf.add_to_collection('__countsketch', scope.name)
+        sk = _sketch_op.count_sketch(probs, h, s, project_size)
+        sk.set_shape([probs.get_shape()[0], project_size])
+        return sk
+    def call(self, x):
+        p1 = self.count_sketch(x[:, :img_dim], self.output_dim, self.h1, self.s1)
+        p2 = self.count_sketch(x[:, img_dim:], self.output_dim, self.h2, self.s2)
+        pc1 = tf.complex(p1, tf.zeros_like(p1))
+        pc2 = tf.complex(p2, tf.zeros_like(p2))
+        conved = tf.ifft(tf.fft(pc1) * tf.fft(pc2))
+        return tf.real(conved)
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+
 class BOW_QI:
     def __init__(self, joint_method = "concat", lr = 0.0001):
         self.joint_method = joint_method
@@ -37,11 +83,7 @@ class BOW_QI:
         if self.joint_method == "concat":
             model.add(Dense(num_hiddens, input_dim=img_dim+word_vec_dim, init='uniform'))
         elif self.joint_method == "mcb":
-            self.h1, self.s1, self.h2, self.s2 = None, None, None, None
-            def mcb(x, project_dim = 16000, img_dim = 2048):
-                from CBP import bilinear_pool
-                return bilinear_pool(x[:, :img_dim], x[:, img_dim:], project_dim)
-            model.add(Lambda(mcb, input_shape = (img_dim + word_vec_dim,)))
+            model.add(MCB(output_dim = 16000, input_shape = (img_dim + word_vec_dim,)))
 	    model.add(Dense(num_hiddens, init='uniform'))
         elif self.joint_method == "mul":
 	    image_model = Sequential()
@@ -117,11 +159,8 @@ class LSTM_QI:
         if self.joint_method == "concat":
 	    model.add(Merge([image_model, language_model], mode='concat', concat_axis=1))
         elif self.joint_method == "mcb":
-            def mcb(x, project_dim = 16000, img_dim = num_hiddens):
-                from CBP import bilinear_pool
-                return bilinear_pool(x[:, :img_dim], x[:, img_dim:], project_dim)
             model.add(Merge([image_model, language_model], mode='concat', concat_axis=1))
-            model.add(Lambda(mcb, input_shape = (img_dim + word_vec_dim,)))
+            model.add(MCB(output_dim = 16000, input_shape = (img_dim + word_vec_dim,)))
         elif self.joint_method == "mul":
             model.add(Merge([image_model, language_model], mode='mul', concat_axis=1))
 	
