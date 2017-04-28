@@ -19,8 +19,8 @@ from models import *
 if __name__ == "__main__":
     #parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('-num_epochs', type=int, default=2)
-    parser.add_argument('-model_save_interval', type=int, default=10)
+    parser.add_argument('-num_epochs', type=int, default=60)
+    parser.add_argument('-model_save_interval', type=int, default=3)
     parser.add_argument('-batch_size', type=int, default=128)
     args = parser.parse_args()
     
@@ -30,15 +30,18 @@ if __name__ == "__main__":
     images_train = h5py.File("./features.h5")["train"][:]
     print "Loading word vectors"
     nlp = spacy.load("en", add_vectors = lambda vocab : vocab.load_vectors(open("/save/lchen112/glove.42B.300d.txt","r")))
-    #encode labels
+    ##encode labels
     labelencoder = preprocessing.LabelEncoder()
     labelencoder.fit(sorted([q["answer"] for q in questions_train]))
     num_classes = len(list(labelencoder.classes_))
     joblib.dump(labelencoder,'../models/labelencoder.pkl')
 	
-    #model = BOW_QI()
-    model = LSTM_QI()
-    #model = MCB()
+    #model = BOW_QI(joint_method = "concat")
+    #model = BOW_QI(joint_method = "mcb")
+    #model = BOW_QI(joint_method = "mul")
+    #model = LSTM_QI(joint_method = "concat")
+    #model = LSTM_QI(joint_method = "mcb")
+    model = LSTM_QI(joint_method = "mul")
     model.build(num_classes)
     print 'Training...'
     for epoch in xrange(args.num_epochs):

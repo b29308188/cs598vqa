@@ -23,15 +23,19 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     print "Loading models..."
-    labelencoder = joblib.load('../models/labelencoder.pkl')
-    #model = BOW_QI()
-    model = LSTM_QI()
-    model.load("0")
+    #labelencoder = joblib.load('../models/labelencoder.pkl')
+    #model = BOW_QI(joint_method = "concat")
+    #model = BOW_QI(joint_method = "mcb")
+    #model =  BOW_QI(joint_method = "mul")
+    #model = LSTM_QI(joint_method = "concat")
+    #model = LSTM_QI(joint_method = "mcb")
+    #model = LSTM_QI(joint_method = "mul")
+    #model.load("0")
         
     print "Loading questions..."
-    #questions_val = json.load(open("../questions/CLEVR_val_questions.json", "r"))["questions"]
+    questions_val = json.load(open("../questions/CLEVR_val_questions.json", "r"))["questions"]
     print "Loading image features..."
-    #images_val = h5py.File("./features.h5")["val"][:]
+    images_val = h5py.File("./features.h5")["val"][:]
     print "Loading word vectors"
     #nlp = spacy.load("en", add_vectors = lambda vocab : vocab.load_vectors(open("/save/lchen112/glove.42B.300d.txt","r")))
 	
@@ -55,7 +59,7 @@ if __name__ == "__main__":
         if len(Q[0].shape) == 1:
             Q = np.vstack(Q)
         else:
-            Q = np.dstack(Q)
+            Q = np.rollaxis(np.dstack(Q), -1)
         A = np.vstack(A)
         predA = model.predict(V, Q)
         for a, pa in zip(A, predA):
